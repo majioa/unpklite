@@ -1,0 +1,20 @@
+write_word	proc	near
+	push	ax
+	push	BX
+	PUSH	DX
+	xor	BX,BX
+	mov	ah,06H
+write_word_1:
+	lodsb
+	or	al,al
+	je	write_word_exit
+	MOV	DL,AL
+;	CALL	WRITE_SYMBOL
+	INT	21H
+	jmp	short write_word_1
+write_word_exit:
+	POP	DX
+	pop	BX
+	pop	ax
+	ret
+endp
