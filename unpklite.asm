@@ -1,29 +1,29 @@
+ASSUME  CS:CGR,DS:DAT,SS:STACK
+.MODEL  SMALL
 .8086
-MODEL   TINY
-CGR     GROUP   COD,DAT
+.STACK  100H
 COD     SEGMENT PARA
-ASSUME  CS:CGR,DS:CGR
 ORG     100H
 LEN_    EQU     (EC-UN+ED-TYPE_OF_FILE_+15+100H)/16
-HEAdER_ EQU     (ED-EXEC_DETECTION_+15)/16
+DATS    EQU     CS:[DATSEG]
+HEADS   EQU     CS:[HEADSEG]
+REMOVINGS       EQU     CS:[REMOVESEG]
+PSPS    EQU     CS:[PSPSEG]
+LEAVE   EQU     PSPS
 UN      PROC    NEAR
         MOV     SP,100H
+        MOV     AX,DAT
+        MOV     DS,AX
+        MOV     ES,AX
         LEA     SI,INTRO_
         CALL    WRITE_WORD
-        MOV     AX,CS
-        ADD     AX,LEN_
-        MOV     CS:[LEAVE_BLOCK_1_],AX
-        ADD     AX,HEADER_
-        MOV     CS:[LEAVE_BLOCK_],AX
-        ADD     AX,800H
-        MOV     CS:[PSP_],AX
+        MOV     AX,PSPS
+        MOV     CS:[PSP],AX
         ADD     AX,10H
-        MOV     CS:[START_SEG_],AX
-        PUSH    CS
-        POP     DS
+        MOV     CS:[START_SEG],AX
         MOV     SI,80H
-        PUSH    CS
-        POP     ES
+        MOV     AX,COD-10H
+        MOV     DS,AX
         LEA     AX,FIRST_
         LEA     BX,SECOND_
         LEA     DX,NEW_
@@ -41,19 +41,12 @@ READ_LINE_OK:
         CALL    READ_FILE_STRING
         JC      READ_FILE_STRING_ERROR
 
+        MOV     DS,DATS
+        ASSUME  DS:DAT
 ;LOAD_ANALIZING_FILE
-        MOV     DS,CS:[LEAVE_BLOCK_]
-        XOR     DX,DX
-        MOV     CX,0FFFFH
-        PUSH    CS
-        POP     ES
-        XOR     AX,AX
-        DEC     AX
-        MOV     CS:[FILE_NAME_ADRESS_],SI
-        CALL    LOAD_FILE;BX:CX-LENGHT
-        JC      LOAD_FILE_ERROR
-        MOV     CS:[LEN_LAST_BLOCK_],CX
-        MOV     CS:[NUMBER_OF_BLOCKS_],BX
+        CALL    LOAD_OLD_FILE
+        MOV     DS:[LEN_LAST_BLOCK],CX
+        MOV     DS:[NUMBER_OF_BLOCKS],BX
         CALL    &DETECT_COM_OR_EXE
 
         ;bx:cx-len
@@ -61,15 +54,17 @@ READ_LINE_OK:
 
         JC      NO_PACKED
         PUSH    SI
-        TEST    CS:[NEW_],00000001B
+        TEST    DS:[NEW_],00000001B
         JZ      UN_1
         CALL    SAVE_OLD_FILE
 UN_1:
+        CALL    CONFIRM_FILE_TO_PSP_FORM
         CALL    WRITE_PACKER
-        CALL    UNPACK
+;       CALL    UNPACK
         JC      UN_2
-        PUSH    CS
-        POP     DS
+        CALL    CONFIRM_PSP_PLUS_REMOVESECTOR_2_FILE
+        MOV     DS,DATS
+        ASSUME  DS,DAT
         LEA     SI,FILE_
         CALL    WRITE_WORD
         POP     SI
@@ -110,7 +105,28 @@ NO_PACKED:
         CALL    WRITE_WORD
         JMP     UN_2
 ENDP
-SAVE_OLD_FILE   PROC    NEAR
+LOAD_OLD_FILE   PROC
+        PUSH    DX
+        PUSH    SI
+        PUSH    DS
+        PUSH    ES
+        MOV     DS:[FILE_NAME_ADRESS],SI
+        MOV     DS,LEAVE
+        ASSUME  DS:PSPSEG
+        XOR     AX,AX
+        MOV     DX,AX
+        DEC     AX
+        MOV     CX,AX
+        MOV     BX,AX
+        MOV     ES,COD-10H
+        CALL    LOAD_FILE
+        POP     ES
+        POP     DS
+        POP     SI
+        POP     DX
+        RET
+ENDP
+SAVE_OLD_FILE   PROC
         PUSH    BX
         PUSH    SI
         PUSH    DI
@@ -328,20 +344,13 @@ include analizer.lib
 include unpack.lib
 include wrpacker.lib
 include prnt_h_d.lib
+DATSEG  DW      DAT
+HEADSEG DW      HEADER
+REMOVESEG       DW     REMOVE
+PSPSEG          DW     REMOVE+800H
 EC:
 ENDS
 DAT     SEGMENT PARA
-TYPE_OF_FILE_   DB      ?
-LEAVE_BLOCK_    DW      ?
-LEAVE_BLOCK_1_  DW      ?
-PSP_    DW      ?
-START_SEG_      DW      ?
-OLD_EXT_        DB      'PKL',0
-FILE_BUFFER_    DB      14      DUP     (0)
-OLD_SS_ DW      ?
-OLD_SP_ DW      ?
-LENght_ DW      ?
-HIGH_LENGHT_    DB      ?
 INTRO_  DB      'UNPKLITE 1.0 Copyright (C) 1996 by Pavel A. Skrylev',0dh,0ah
         db      'All Right Reserved',0DH,0AH,0
 USAGE_  DB      'Usage: UNPKLITE.COM <Switch> <Filename>',0DH,0AH
@@ -350,19 +359,34 @@ UNPACKING_      DB      'Unpacking',0
 UNPROTECTING_   DB      'Unprotecting',0
 INCLUDE IOERRORS.LBX
 INCLUDE ERRORS.LBX
-
+TYPE_OF_FILE    DB      ?
+PACKER_VERSION_ DW      0;L-SUB VERSION,H-VERSION
+OLD_EXT         DB      'PKL',0
+FILE_BUFFER     DB      14      DUP     (0)
 FIRST_  DB      '/B',0FFH
 SECOND_ DB      'B',0FFH
 NEW_    DW      1       DUP     (0)
+LEN_LAST_BLOCK  DW      0
+NUMBER_OF_BLOCKS        DW      0
+FILE_NAME_ADRESS        DW      0
+
+OLD_SS  DW      ?
+OLD_SP  DW      ?
+LENGHT  DW      ?
+HIGH_LENGHT     DB      ?
+
 NO_STRING_      DB      0
 METHOD_ DW      0
-FILE_NAME_ADRESS_       DW      0
 
-LEN_LAST_BLOCK_ DW      0
-NUMBER_OF_BLOCKS_       DW      0
 
-PACKER_VERSION_ DW      0;L-SUB VERSION,H-VERSION
+HVOST   DB      ' ',0DH,0
 
+EXEC_BPB        DW      0
+                DD      DAT:HVOST
+                DD      COD-10H:5CH
+                DD      COD-10H:6CH
+                DD      ?
+                DD      ?
 ENDS
 HEADER  SEGMENT PARA
 EXEC_DETECTION_ DB      'MZ'
@@ -379,10 +403,10 @@ BEGIN_IP_       DW      ?
 BEGIN_CS_       DW      ?
 SHIFT_IN_TABLE_OF_REMOVINGS_    DW      (ed-exec_detection_)
 NUMBER_OF_OVERLAY_      DW      0
-IDENTIFICATION_ DB      0,1,'Unpklite by Pavel Skrylev Computing (C)1996. All Right Reserved'
-LAST_ZERO:
-                DB      3       DUP     (0)
+IDENTIFICATION_ DB      0,1,'Unpklite by Pavel Skrylev Computing (C)1996. All Right Reserved',0,0,0
 ED:
+ENDS
+REMOVE  SEGMENT BYTE
 ENDS
 END     UN
 
